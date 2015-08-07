@@ -1,0 +1,379 @@
+---
+title: "exercises01"
+output: html_document
+---
+
+# Exploratory Analysis
+
+```{r}
+Votes = read.csv('georgia2000.csv', header=TRUE)
+summary(Votes)
+Votes$undercount = Votes$ballots - Votes$votes
+Votes$pctunder = Votes$undercount/Votes$ballots
+summary(Votes$pctunder)
+boxplot(pctunder~equip, data=Votes)
+```
+
+We can see that, for the most part, the equipment tended to produce
+similar rates of undercounting for all 4 of the equipment systems.
+However, the only 2 counties that witnessed undercounting rates
+significantly higher than 10% (at 14.96% and 18.81%) both used the
+optical equipment to tally votes.
+
+
+```{r}
+t1 = xtabs(~poor + equip, data=Votes)
+t1
+p1 = prop.table(t1, margin=1)
+p1
+
+relrisk = p1[1,2]/p1[2,2] # relative risk for using optical
+relrisk
+```
+
+
+The relative risk shows that counties that were not categorized as having
+increased poverty levels were much more likely to use the optical voting
+equipment than those counties which did fit into this characterization.
+
+```{r}
+plot(Votes$perAA, Votes$equip)
+lm.fit = lm(perAA~equip, data=Votes)
+summary(lm.fit)
+```
+
+We can also see that the percentage of African Americans in any given
+county does not visually appear to be correlated with the type of
+equipment used. When running a multiple regression, the model suggests
+that counties using optical equipment tend to have a lower percentage of
+African Americans.
+
+
+# Bootstrapping
+
+```{r}
+library(mosaic)
+library(fImport)
+library(foreach)
+
+set.seed(48)
+
+mystocks = c("SPY", "TLT", "LQD", "EEM", "VNQ")
+myprices = yahooSeries(mystocks, from='2010-08-05', to='2015-08-05')
+
+YahooPricesToReturns = function(series) {
+  mycols = grep('Adj.Close', colnames(series))
+	closingprice = series[,mycols]
+	N = nrow(closingprice)
+	percentreturn = as.data.frame(closingprice[2:N,]) / as.data.frame(closingprice[1:(N-1),]) - 1
+	mynames = strsplit(colnames(percentreturn), '.', fixed=TRUE)
+	mynames = lapply(mynames, function(x) return(paste0(x[1], ".PctReturn")))
+	colnames(percentreturn) = mynames
+	as.matrix(na.omit(percentreturn))
+}
+
+myreturns = YahooPricesToReturns(myprices)
+
+pairs(myreturns)
+cor(myreturns)
+
+myexpected = c(mean(myreturns[,1]),
+               mean(myreturns[,2]),
+               mean(myreturns[,3]),
+               mean(myreturns[,4]),
+               mean(myreturns[,5]))
+
+riskfree = myexpected[2]
+
+myexcess = matrix(0, nrow(myreturns), ncol(myreturns))
+
+for(i in 1:nrow(myreturns)) {
+  for (j in 1:ncol(myreturns)) {
+    myexcess[i,j] = myreturns[i,j] - riskfree
+  }
+}
+
+mybeta2 = cov(myexcess[,2], myexcess[,1])/var(myexcess[,1])
+mybeta2
+mybeta3 = cov(myexcess[,3], myexcess[,1])/var(myexcess[,1])
+mybeta3
+mybeta4 = cov(myexcess[,4], myexcess[,1])/var(myexcess[,1])
+mybeta4
+mybeta5 = cov(myexcess[,5], myexcess[,1])/var(myexcess[,1])
+mybeta5
+```
+
+## Portfolio 1 - 20% of each asset
+
+```{r}
+totalwealth = 100000
+weights1 = c(0.2, 0.2, 0.2, 0.2, 0.2)
+holdings = weights1 * totalwealth
+n_days = 20
+
+sim1 = foreach(i=1:5000, .combine='rbind') %do% {
+  totalwealth = 100000
+	weights = c(0.2, 0.2, 0.2, 0.2, 0.2)
+	holdings = weights * totalwealth
+	wealthtracker = rep(0, n_days)
+	for(today in 1:n_days) {
+		return.today = resample(myreturns, 1, orig.ids=FALSE)
+		holdings = holdings + holdings*return.today
+		totalwealth = sum(holdings)
+		wealthtracker[today] = totalwealth
+    holdings = weights * totalwealth
+	}
+	wealthtracker
+}
+
+hist(sim1[,n_days]- 100000, 25)
+quantile(sim1[,n_days], 0.05) - 100000
+quantile(sim1[,n_days], 0.5) - 100000
+quantile(sim1[,n_days], 0.95) - 100000
+```
+
+This balanced portfolio has a 5% value-at-risk of $3,664.30. On average,
+it will make about $616.19, and in the best 5% of simulations, it made
+over $5,208.73.
+
+
+## Portfolio 2 - Safe
+
+40% treasury bonds  
+20% corporate bonds  
+10% real estate  
+30% S&P 500
+
+```{r}
+totalwealth = 100000
+weights1 = c(0.3, 0.4, 0.2, 0.0, 0.1)
+holdings = weights1 * totalwealth
+n_days = 20
+
+sim1 = foreach(i=1:5000, .combine='rbind') %do% {
+  totalwealth = 100000
+  weights = c(0.3, 0.4, 0.2, 0.0, 0.1)
+	holdings = weights * totalwealth
+	wealthtracker = rep(0, n_days)
+	for(today in 1:n_days) {
+		return.today = resample(myreturns, 1, orig.ids=FALSE)
+		holdings = holdings + holdings*return.today
+		totalwealth = sum(holdings)
+		wealthtracker[today] = totalwealth
+    holdings = weights * totalwealth
+	}
+	wealthtracker
+}
+
+hist(sim1[,n_days]- 100000, 25)
+quantile(sim1[,n_days], 0.05) - 100000
+quantile(sim1[,n_days], 0.5) - 100000
+quantile(sim1[,n_days], 0.95) - 100000
+```
+
+This safer portfolio has a 5% value-at-risk of just $2,409.02. However,
+we are also sacrificing the upside. On average, it had a 20-day
+return of $840.86, but the top 5% of simulations produced returns
+over $4,029.50.
+
+
+## Portfolio 3 - Aggressive
+
+20% S&P 500  
+80% emerging markets
+
+```{r}
+totalwealth = 100000
+weights1 = c(0.2, 0.0, 0.0, 0.8, 0.0)
+holdings = weights1 * totalwealth
+n_days = 20
+
+sim1 = foreach(i=1:5000, .combine='rbind') %do% {
+  totalwealth = 100000
+  weights = c(0.2, 0.0, 0.0, 0.8, 0.0)
+  holdings = weights * totalwealth
+	wealthtracker = rep(0, n_days)
+	for(today in 1:n_days) {
+		return.today = resample(myreturns, 1, orig.ids=FALSE)
+		holdings = holdings + holdings*return.today
+		totalwealth = sum(holdings)
+		wealthtracker[today] = totalwealth
+    holdings = weights * totalwealth
+	}
+	wealthtracker
+}
+
+hist(sim1[,n_days]- 100000, 25)
+quantile(sim1[,n_days], 0.05) - 100000
+quantile(sim1[,n_days], 0.5) - 100000
+quantile(sim1[,n_days], 0.95) - 100000
+```
+
+This very risky portfolio has the chance to make the most money. However,
+it also has the chance to lose big, with a 5% value-at-risk of $8,869.83.
+It actually did the worst on average, with an average gain of $374.32.
+The aggressiveness paid off in the best 5% of scenarios, though,
+generating over $9,792.66 in returns.
+
+
+# Clustering and PCA
+
+```{r}
+library(cluster)
+library(fpc)
+
+Wine = read.csv('wine.csv', header=TRUE)
+
+wine_chem = Wine[,1:11]
+wine_scaled = scale(wine_chem, center=TRUE, scale=TRUE)
+mu = attr(wine_scaled,"scaled:center")
+sigma = attr(wine_scaled,"scaled:scale")
+
+summary(wine_scaled)
+```
+
+## PCA
+
+```{r}
+pc.wine = prcomp(wine_scaled, scale=TRUE)
+summary(pc.wine)
+plot(pc.wine)
+
+loadings = pc.wine$rotation
+scores = pc.wine$x
+qplot(scores[,1], scores[,2], color=Wine$color, xlab='Component 1', ylab='Component 2')
+```
+
+Above, we see that the first 2 principal components separate the wines
+into red and white pretty accurately.
+
+```{r}
+qplot(scores[,1], scores[,2], color=Wine$quality, xlab='Component 1', ylab='Component 2')
+```
+
+However, the distinction between the qualities of the wine is much more
+subtle. However, we can see a slight trend in the data points, such that
+it seems the wines toward the bottom-right of the chart have a tendency
+to score better than the wines at the top-left of the chart. However, this
+is not without many exceptions.
+
+```{r}
+o1 = order(loadings[,1])
+colnames(wine_scaled)[head(o1,4)]
+colnames(wine_scaled)[tail(o1,4)]
+
+o2 = order(loadings[,2])
+colnames(wine_scaled)[head(o2,4)]
+colnames(wine_scaled)[tail(o2,4)]
+```
+
+## k-means
+
+```{r}
+cluster_chem = kmeans(wine_scaled, centers = 2, n=50)
+plotcluster(wine_scaled, cluster_chem$cluster)
+qplot(color, density, data=Wine, color=factor(cluster_chem$cluster))
+table(Wine$color,cluster_chem$cluster)
+```
+
+Here we can see that we can pretty accurately predict whether the wine
+is red or white based on just this k-means clustering.
+
+```{r}
+cluster_chem = kmeans(wine_scaled, centers = 10, iter.max=30, n=50)
+qplot(color, volatile.acidity, data=Wine, color=factor(cluster_chem$cluster))
+plotcluster(wine_scaled, cluster_chem$cluster)
+table(Wine$quality,cluster_chem$cluster)
+```
+
+However, we can see that the quality, as determined by the wine snobs,
+seems relatively normally distributed among 10 clusters, indicating
+that we cannot group the wines together based on their chemical
+makeup using k-means in a way that tells us much of anything about how
+the quality will be judged.
+
+# Market Segmentation
+
+Just using k-means did not produce very interpretable graphs, since
+all features are measured in integers, so that no matter the axes,
+I was only able to see a few of the thousands of points.
+
+Therefore, I decided to combine PCA with k-means, in that I used the
+k-means clusters to color the points on the qplot for PCA. This
+actually turned out to be very powerful in terms of visually
+categorizing the data.
+
+```{r}
+twitter.data = read.csv('social_marketing.csv', header=TRUE)
+twitter.data = twitter.data[,2:37]
+twitter.scaled = scale(twitter.data, center=TRUE, scale=TRUE)
+
+pc.twitter = prcomp(twitter.scaled, scale=TRUE)
+plot(pc.twitter)
+loadings = pc.twitter$rotation
+scores = pc.twitter$x
+# COLOR BY K-MEANS CLUSTER
+cluster_cat = kmeans(twitter.scaled, centers = 2, n=50)
+qplot(scores[,1], scores[,2], color=cluster_cat$cluster, xlab='Component 1', ylab='Component 2')
+cluster_cat$centers
+```
+
+The two segments break up nicely. However, it seems that the two
+groups are essentially divided into people who tweet above average
+amounts about everything, and those who tweet a below average
+amount about everything. However, this does explain why the points
+on the right are so close together, and the left is so spread out.
+There is only one way to not talk about much of anything.
+
+Let's try coloring with three clusters to get more information.
+
+```{r}
+cluster_cat = kmeans(twitter.scaled, centers = 3, n=50)
+qplot(scores[,1], scores[,2], color=cluster_cat$cluster, xlab='Component 1', ylab='Component 2')
+cluster_cat$centers
+```
+
+We can see that the quiet group remains over to the right, while the
+active accounts have been split into two main groups and seem to be
+divided in the direction of Component 2.
+
+```{r}
+cluster_cat = kmeans(twitter.scaled, centers = 4, n=50)
+qplot(scores[,1], scores[,2], color=cluster_cat$cluster, xlab='Component 1', ylab='Component 2')
+cluster_cat$centers
+```
+
+We can see a third group emerging from the active members. But what
+would happen if we used the 2nd and 3rd principal components instead
+of the 1st and 2nd? Could we possibly see those groups split up by 
+more than activity level?
+
+```{r}
+qplot(scores[,2], scores[,3], color=cluster_cat$cluster, xlab='Component 2', ylab='Component 3')
+```
+
+I like the result of this graph. Instead of focusing on the 1st
+principal component, which mostly separates active accounts from inactive
+accounts, we instead see the inactive accounts in the middle (where we
+don't know much about their interests) with 3 main categories of
+interest spiked out like spokes on a wheel, with little overlap.
+Four clusters fits this data well for that reason: a nondescript
+center and three categorizations of active users.
+
+I have organized these three groups by their most common interests,
+especially the ones that separate them from the other 2 groups.
+I then tried to come up with a few labels that could describe
+this market segment in order to help NutrientH20 understand its
+follower base.
+
+1) Teenagers, College Students, Young Adults:  
+chatter, photo sharing, shopping, music, college, sports playing,
+cooking, eco, beauty, outdoors, personal fitness, fashion,
+health/nutrition, tv/film, online gaming, art  
+
+2) Suburban Parents, Rural, Senior Citizens:  
+family, food, sports fandom, crafts, religion, parenting, school
+
+3) Sophisticated, Independent, Career-Oriented, Hobbyists, Urban:  
+travel, politics, news, computers, automotive
+
