@@ -1,6 +1,7 @@
 ---
 title: "exercises01"
-output: html_document
+author: Ben Grisz
+output: md_document
 ---
 
 # Exploratory Analysis
