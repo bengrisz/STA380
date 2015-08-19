@@ -1,0 +1,234 @@
+---
+title: "exercises02"
+author: "Ben Grisz"
+date: "August 17, 2015"
+output: md_document
+---
+
+
+# Flights at ABIA
+
+```{r}
+set.seed(620)
+
+
+# flights at ABIA
+flights = read.csv('/Users/bengrisz/Documents/UT/Academic/Predictive2/STA380/data/ABIA.csv', header=TRUE)
+
+flights$Year <- NULL
+flights$FlightNum <- NULL
+flights$TailNum <- NULL
+flights$UniqueCarrier <- NULL
+flights$TaxiIn <- NULL
+flights$TaxiOut <- NULL
+flights$CancellationCode <- NULL
+
+
+flights$CRSDepTime[flights$CRSDepTime<300] <- 
+      flights$CRSDepTime[flights$CRSDepTime<300] + 2400
+flights$CarrierDelay <- NULL
+flights$WeatherDelay <- NULL
+flights$NASDelay <- NULL
+flights$SecurityDelay <- NULL
+flights$LateAircraftDelay <- NULL
+
+flights$Month <- factor(flights$Month)
+flights$DayofMonth <- factor(flights$DayofMonth)
+```
+
+Due to the shape of the data, it looks like there could  be a positive correlation between delays and departure time, and it looks like there could be a negative correlation between delays and departure-time-squared. Thus I will try to fit `DepDelay` on a second degree polynomial of `CRSDepTime`.
+
+
+```{r}
+plot(flights$CRSDepTime, flights$DepDelay)
+quad.fit = lm(DepDelay ~ poly(CRSDepTime, 2),data=flights)
+
+minutes = seq(400,2500,1)
+quad.pred = predict(quad.fit,data.frame(CRSDepTime=minutes))
+
+plot(flights$CRSDepTime, flights$DepDelay)
+lines(minutes, quad.pred, col="red", lwd=3)
+```
+
+
+This does not capture the curve I imagined when looking at the shape of the data points. However, it does hint at a slightly upward slope, such that the later in the day a flight is, the more likely it is to be delayed.  
+
+Next I want to try k-Nearest Neighbors to see if it describes some of the shape of the data better than the linear model, or at least to see if it confirms the positive correlation between departure time and delays.
+
+```{r}
+library(kknn)
+train = data.frame(flights$CRSDepTime, flights$DepDelay)
+colnames(train) <- c("DepTime", "Delay")
+test = data.frame(flights$CRSDepTime, flights$DepDelay)
+colnames(test) <- c("DepTime", "Delay")
+ind = order(test[,1])
+test = test[ind,]
+near = kknn(Delay~DepTime, train, test, k=1000, kernel="rectangular")
+plot(flights$CRSDepTime, flights$DepDelay, main=paste("k=1000"), 
+     pch=19,cex=0.8,col="darkgray")
+lines(test[ind,1],near$fitted[ind],col=2,lwd=2)
+```
+
+We can see that the k-Nearest Neighbors algorithm finds a similar upward trend, such that it is likely the delays are worse on average the later it gets in the day. This follows intuition, as delays earlier in the day can lead to delays in later flights. While all flights in the day are just as likely to be delayed for the first time at any time, the total should increase as delays later in the day that were caused by earlier flights start to add on to the random delays.
+
+# Author Attribution
+
+
+```{r}
+library(tm)
+
+readerPlain = function(fname){
+  readPlain(elem=list(content=readLines(fname)), 
+            id=fname, language='en') }
+author_dirs = Sys.glob('/Users/bengrisz/Documents/UT/Academic/Predictive2/STA380/data/ReutersC50/C50train/*')
+
+file_list = NULL
+labels = NULL
+for(author in author_dirs) {
+  author_name = substring(author, first=84)
+  files_to_add = Sys.glob(paste0(author, '/*.txt'))
+  file_list = append(file_list, files_to_add)
+  labels = append(labels, rep(author_name, length(files_to_add)))
+}
+
+all_docs = lapply(file_list, readerPlain) 
+names(all_docs) = file_list
+names(all_docs) = sub('.txt', '', names(all_docs))
+
+train_corpus = Corpus(VectorSource(all_docs))
+names(train_corpus) = file_list
+
+
+train_corpus = tm_map(train_corpus, content_transformer(tolower))
+train_corpus = tm_map(train_corpus, content_transformer(removeNumbers))
+train_corpus = tm_map(train_corpus, content_transformer(removePunctuation))
+train_corpus = tm_map(train_corpus, content_transformer(stripWhitespace))
+train_corpus = tm_map(train_corpus, content_transformer(removeWords), stopwords("en"))
+
+DTM_train = DocumentTermMatrix(train_corpus)
+DTM_train = removeSparseTerms(DTM_train, .99)
+DTM_train
+
+X_train = as.matrix(DTM_train)
+
+smooth_count = 1/nrow(X_train)
+w_all = rowsum(X_train + smooth_count, labels)
+w_all = w_all/sum(w_all)
+w_all = log(w_all)
+```
+
+Above, I have read in the data and used the `tm` library to quickly produce a document term matrix for the test data. Next, I created weights per author for each word according to the corpus. Below, I created a similar matrix for the test data, ensuring that the new matrix would have the exact same columns as the training data.
+
+```{r}
+author_dirs = Sys.glob('/Users/bengrisz/Documents/UT/Academic/Predictive2/STA380/data/ReutersC50/C50test/*')
+
+file_list = NULL
+test_labels = NULL
+author_names = NULL
+for(author in author_dirs) {
+  author_name = substring(author, first=83)
+  author_names = append(author_names, author_name)
+  files_to_add = Sys.glob(paste0(author, '/*.txt'))
+  file_list = append(file_list, files_to_add)
+  test_labels = append(test_labels, rep(author_name, length(files_to_add)))
+}
+
+all_docs = lapply(file_list, readerPlain) 
+names(all_docs) = file_list
+names(all_docs) = sub('.txt', '', names(all_docs))
+
+test_corpus = Corpus(VectorSource(all_docs))
+names(test_corpus) = file_list
+
+test_corpus = tm_map(test_corpus, content_transformer(tolower))
+test_corpus = tm_map(test_corpus, content_transformer(removeNumbers))
+test_corpus = tm_map(test_corpus, content_transformer(removePunctuation))
+test_corpus = tm_map(test_corpus, content_transformer(stripWhitespace))
+test_corpus = tm_map(test_corpus, content_transformer(removeWords), stopwords("en"))
+
+DTM_test = DocumentTermMatrix(test_corpus, list(dictionary=colnames(DTM_train)))
+DTM_test
+
+X_test = as.matrix(DTM_test)
+```
+
+In order to run Naive Bayes, we compare the sum of the products (dot product) of all the weights for each author's use of a word times each word's frequency in the document we are trying to classify. This amounts to the same as comparing the probabilities. We select the maximum score using this method to determine which author we will say was likely the author of the document.
+
+```{r}
+predictions = NULL
+for (i in 1:nrow(X_test)) {
+  # get maximum Naive Bayes log probabilities
+  max = -(Inf)
+  author = NULL
+  for (j in 1:nrow(w_all)) {
+    result = sum(w_all[j,]*X_test[i,])
+    if (result > max) {
+      max = result
+      author = rownames(w_all)[j]
+    }
+  }
+  predictions = append(predictions, author)
+}
+
+predict_results = table(test_labels,predictions)
+```
+
+The predictions seem relatively accurate at first glance considering we are selecting from 50 classifications. I did not print them out as the results are unwieldy, but below is a summary of the highlights:  
+
+Many predicted: Alexander Smith, Jane Macartney, 
+
+Most accurate: Fumiko Fujisaki (48 correct, 2 docs wrongly attributed), Jim Gilchrist (48 correct, 2 docs wrongly attributed), Lynnley Browning (50 correct, 12 wrongly attributed), Roger Fillion (40 correct, 1 wrongly attributed)
+
+Least predicted: Edna Fernandes (10 correct, 2 wrongly attributed), Tan Eelyn (1 correct, 1 wrongly attributed)
+
+Most broad predictions: Samuel Perry was predicted for docs by 17 different authors, Sarah Davidson predicted for docs by 28 diff. authors
+
+Most common misclassifications: Tan Eelyn for Peter Humphrey (33), Scott Hillis for Jane Macartney (36), Benjamin Kang Lim for Jane Macartney (24), Alan Crosby for John Mastrini (20), Jon Lopatka for John Mastrini (20), David Lowder for Todd Nissen (24)
+
+```{r}
+correct = NULL
+for (i in 1:nrow(predict_results)) {
+  correct = append(correct, predict_results[i, i])
+}
+
+correct_by_author = data.frame(correct, row.names = author_names)
+correct_by_author
+sum(correct_by_author)/2500
+```
+
+Using the Naive Bayes classification method, we got a 60.24% rate of success identifying the correct author for a document.
+
+Next, I wanted to try Random Forest, because I think that finding the right words to split on would greatly increase prediction accuracy. The first few times I ran it, it crashed my computer because the algorithm has way too much complexity to use on a model with 3325 features. Therefore I had to reduce the `mtry` to 6.
+
+```{r}
+library(randomForest)
+rf.fit = randomForest(x = X_train, y = as.factor(labels), mtry=6, ntree=200)
+rf.pred = predict(rf.fit, data=X_test)
+rf_results = table(test_labels, rf.pred)
+rf_correct = NULL
+for (i in 1:nrow(rf_results)) {
+  rf_correct = append(rf_correct, rf_results[i, i])
+}
+
+rf_correct_by_author = data.frame(author_names, rf_correct)
+rf_correct_by_author
+sum(rf_correct_by_author)/2500
+```
+
+Using the Random Forest model, I got a xx.x% rate of success identifying the correct author for a document.
+
+I prefer the Naive Bayes simply because it is more interpretable. We can see the different likelihoods for each word and possibly say something about their speech patterns of choice of words. Random Forest may be a more accurate predictor, but does not give us the same clear-cut inprebetability. Also, it is likely that increasing mtry would increase the accuracy of Random Forest, but it is computationally infeasible to make it too large, which is another reason why it is not preferable to Naive Bayes.
+
+
+# Practice with Association Rule Mining
+
+
+```{r}
+library(arules)
+groceries <- read.transactions("/Users/bengrisz/Documents/UT/Academic/Predictive2/STA380/data/groceries.txt", format = 'basket', sep = ',')
+grocrules <- apriori(groceries, parameter=list(support=.005, confidence=.5, maxlen=8))
+inspect(grocrules)
+```
+
+
+These association rules all makes sense, but they don't tell us much except that people who are buying groceries often buy `whole milk` when they are buying fruits, vegetables, dairy, and baking goods. It seems like they are mostly all related products being substituted for one another in the bundles (such as `root vegetables` and `other vegetables`). It might be more useful to group these products together into categories so that there is not this overlap.
