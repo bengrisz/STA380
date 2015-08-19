@@ -175,7 +175,7 @@ predict_results = table(test_labels,predictions)
 
 The predictions seem relatively accurate at first glance considering we are selecting from 50 classifications. I did not print them out as the results are unwieldy, but below is a summary of the highlights:  
 
-Many predicted: Alexander Smith, Jane Macartney, 
+Many predicted: Alexander Smith, Jane Macartney
 
 Most accurate: Fumiko Fujisaki (48 correct, 2 docs wrongly attributed), Jim Gilchrist (48 correct, 2 docs wrongly attributed), Lynnley Browning (50 correct, 12 wrongly attributed), Roger Fillion (40 correct, 1 wrongly attributed)
 
@@ -210,12 +210,12 @@ for (i in 1:nrow(rf_results)) {
   rf_correct = append(rf_correct, rf_results[i, i])
 }
 
-rf_correct_by_author = data.frame(author_names, rf_correct)
+rf_correct_by_author = data.frame(rf_correct, row.names = author_names)
 rf_correct_by_author
 sum(rf_correct_by_author)/2500
 ```
 
-Using the Random Forest model, I got a xx.x% rate of success identifying the correct author for a document.
+Using the Random Forest model, I got a 77.24% rate of success identifying the correct author for a document.
 
 I prefer the Naive Bayes simply because it is more interpretable. We can see the different likelihoods for each word and possibly say something about their speech patterns of choice of words. Random Forest may be a more accurate predictor, but does not give us the same clear-cut inprebetability. Also, it is likely that increasing mtry would increase the accuracy of Random Forest, but it is computationally infeasible to make it too large, which is another reason why it is not preferable to Naive Bayes.
 

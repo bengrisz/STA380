@@ -1,7 +1,7 @@
 
 
 ## exercises 02 script
-
+set.seed(620)
 
 # flights at ABIA
 flights = read.csv('/Users/bengrisz/Documents/UT/Academic/Predictive2/STA380/data/ABIA.csv', header=TRUE)
@@ -64,6 +64,8 @@ plot(flights$CRSDepTime, flights$DepDelay, main=paste("k=5"),
 
 lines(test[ind,1],near$fitted[ind],col=2,lwd=2)
 
+
+rm(list=ls())
 # author attribution
 
 library(tm)
@@ -183,6 +185,12 @@ rf_correct = NULL
 for (i in 1:nrow(rf_results)) {
   rf_correct = append(rf_correct, rf_results[i, i])
 }
+
+rf_correct_by_author = data.frame(rf_correct, row.names = author_names)
+rf_correct_by_author
+sum(rf_correct_by_author)/2500
+
+
 
 # practice with association rule mining
 
